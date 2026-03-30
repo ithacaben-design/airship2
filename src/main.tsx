@@ -22,8 +22,50 @@ if (srcDescriptor?.set) {
   });
 }
 
+const tuneLandingButton = () => {
+  const buttons = Array.from(document.querySelectorAll('button'));
+  const launchButton = buttons.find(
+    (button) => button.textContent?.trim().toLowerCase() === 'go',
+  );
+
+  if (!launchButton) {
+    return false;
+  }
+
+  launchButton.setAttribute('aria-label', 'Launch Flight');
+
+  const label = Array.from(launchButton.querySelectorAll('span')).find(
+    (span) => span.textContent?.trim().toLowerCase() === 'go',
+  );
+
+  if (label) {
+    label.textContent = 'Launch Flight';
+    label.style.letterSpacing = '0.22em';
+    label.style.fontSize = '1rem';
+  }
+
+  return true;
+};
+
+const landingObserver = new MutationObserver(() => {
+  if (tuneLandingButton()) {
+    landingObserver.disconnect();
+  }
+});
+
+landingObserver.observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+});
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
 );
+
+requestAnimationFrame(() => {
+  if (tuneLandingButton()) {
+    landingObserver.disconnect();
+  }
+});
