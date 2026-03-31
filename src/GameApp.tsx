@@ -1,62 +1,65 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import airshipImageSrc from '../airship.png';
+import loop2Src from '../loop2.png';
+import loop3Src from '../loop3.png';
+import loop4Src from '../loop4.png';
+import loop5Src from '../loop5.png';
+import loop6Src from '../loop6.png';
+import loop7Src from '../loop7.png';
 
-const WORLD_WIDTH = 2600;
 const LIFT_ACCELERATION = -980;
 const GRAVITY = 620;
 const CRUISE_SPEED = 170;
 const BOOST_SPEED = 310;
 
 type LayerConfig = {
-  color: string;
+  image: string;
+  bottom: number;
   height: number;
-  size: number;
   opacity: number;
   speed: number;
-  yOffset: number;
+  size: string;
+  blend?: string;
 };
 
 const LAYERS: LayerConfig[] = [
-  {color: '#dce8d7', height: 180, size: 220, opacity: 0.75, speed: 0.2, yOffset: 180},
-  {color: '#98ad96', height: 230, size: 280, opacity: 0.82, speed: 0.42, yOffset: 130},
-  {color: '#4f6659', height: 320, size: 360, opacity: 0.95, speed: 0.72, yOffset: 40},
+  {image: loop7Src, bottom: 280, height: 260, opacity: 0.28, speed: 0.08, size: 'auto 100%'},
+  {image: loop6Src, bottom: 220, height: 300, opacity: 0.4, speed: 0.14, size: 'auto 100%'},
+  {image: loop5Src, bottom: 170, height: 320, opacity: 0.52, speed: 0.22, size: 'auto 100%'},
+  {image: loop4Src, bottom: 110, height: 360, opacity: 0.7, speed: 0.34, size: 'auto 100%'},
+  {image: loop3Src, bottom: 50, height: 390, opacity: 0.84, speed: 0.5, size: 'auto 100%'},
+  {image: loop2Src, bottom: -10, height: 230, opacity: 0.98, speed: 0.82, size: 'auto 100%'},
 ];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
 function Layer({
-  color,
+  image,
+  bottom,
   height,
-  size,
   opacity,
   speed,
-  yOffset,
+  size,
+  blend,
   scroll,
 }: LayerConfig & {scroll: number}) {
-  const offset = -(scroll * speed) % size;
-  const peaks = [];
-
-  for (let left = offset - size; left < WORLD_WIDTH + size; left += size) {
-    peaks.push(
-      <div
-        key={`${color}-${left}`}
-        className="absolute bottom-0"
-        style={{
-          left,
-          width: size,
-          height,
-          opacity,
-          background: color,
-          clipPath: 'polygon(0% 100%, 18% 55%, 38% 76%, 54% 26%, 76% 70%, 100% 100%)',
-          filter: 'drop-shadow(0 8px 20px rgba(18, 30, 25, 0.16))',
-          transform: `translateY(${yOffset}px)`,
-        }}
-      />,
-    );
-  }
-
-  return <>{peaks}</>;
+  return (
+    <div
+      className="pointer-events-none absolute left-[-20vw] right-[-20vw] bg-repeat-x"
+      style={{
+        bottom,
+        height,
+        opacity,
+        backgroundImage: `url(${image})`,
+        backgroundRepeat: 'repeat-x',
+        backgroundPositionX: `${-scroll * speed}px`,
+        backgroundPositionY: 'bottom',
+        backgroundSize: size,
+        mixBlendMode: blend,
+      }}
+    />
+  );
 }
 
 export default function GameApp() {
@@ -230,9 +233,9 @@ export default function GameApp() {
         }}
       />
 
-      <div className="absolute inset-x-0 bottom-0 h-[65vh]">
+      <div className="absolute inset-x-0 bottom-0 h-[72vh]">
         {LAYERS.map((layer) => (
-          <Layer key={layer.color} {...layer} scroll={worldScroll} />
+          <Layer key={`${layer.image}-${layer.bottom}`} {...layer} scroll={worldScroll} />
         ))}
       </div>
 
