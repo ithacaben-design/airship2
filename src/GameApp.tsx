@@ -16,19 +16,17 @@ type LayerConfig = {
   image: string;
   bottom: number;
   height: number;
-  opacity: number;
   speed: number;
   size: string;
-  blend?: string;
 };
 
-const LAYERS: LayerConfig[] = [
-  {image: loop7Src, bottom: 280, height: 260, opacity: 0.28, speed: 0.08, size: 'auto 100%'},
-  {image: loop6Src, bottom: 220, height: 300, opacity: 0.4, speed: 0.14, size: 'auto 100%'},
-  {image: loop5Src, bottom: 170, height: 320, opacity: 0.52, speed: 0.22, size: 'auto 100%'},
-  {image: loop4Src, bottom: 110, height: 360, opacity: 0.7, speed: 0.34, size: 'auto 100%'},
-  {image: loop3Src, bottom: 50, height: 390, opacity: 0.84, speed: 0.5, size: 'auto 100%'},
-  {image: loop2Src, bottom: -10, height: 230, opacity: 0.98, speed: 0.82, size: 'auto 100%'},
+const LOOP_SEQUENCE: LayerConfig[] = [
+  {image: loop7Src, bottom: 240, height: 320, speed: 0.12, size: 'auto 100%'},
+  {image: loop6Src, bottom: 210, height: 340, speed: 0.16, size: 'auto 100%'},
+  {image: loop5Src, bottom: 180, height: 360, speed: 0.2, size: 'auto 100%'},
+  {image: loop4Src, bottom: 145, height: 380, speed: 0.24, size: 'auto 100%'},
+  {image: loop3Src, bottom: 110, height: 400, speed: 0.28, size: 'auto 100%'},
+  {image: loop2Src, bottom: 60, height: 270, speed: 0.34, size: 'auto 100%'},
 ];
 
 const clamp = (value: number, min: number, max: number) =>
@@ -38,10 +36,8 @@ function Layer({
   image,
   bottom,
   height,
-  opacity,
   speed,
   size,
-  blend,
   scroll,
 }: LayerConfig & {scroll: number}) {
   return (
@@ -50,13 +46,11 @@ function Layer({
       style={{
         bottom,
         height,
-        opacity,
         backgroundImage: `url(${image})`,
         backgroundRepeat: 'repeat-x',
         backgroundPositionX: `${-scroll * speed}px`,
         backgroundPositionY: 'bottom',
         backgroundSize: size,
-        mixBlendMode: blend,
       }}
     />
   );
@@ -208,6 +202,7 @@ export default function GameApp() {
 
   const shipAngle = clamp(velocityRef.current * 0.03, -18, 18);
   const shipX = viewport.width * 0.24 + Math.min(70, speed * 0.12);
+  const activeLoop = LOOP_SEQUENCE[Math.floor(worldScroll / 900) % LOOP_SEQUENCE.length];
   const shipShadow = useMemo(
     () => `drop-shadow(0 24px 28px rgba(36, 48, 43, 0.28)) drop-shadow(0 0 22px rgba(238, 197, 122, ${liftActive ? 0.36 : 0.12}))`,
     [liftActive],
@@ -234,9 +229,7 @@ export default function GameApp() {
       />
 
       <div className="absolute inset-x-0 bottom-0 h-[72vh]">
-        {LAYERS.map((layer) => (
-          <Layer key={`${layer.image}-${layer.bottom}`} {...layer} scroll={worldScroll} />
-        ))}
+        <Layer {...activeLoop} scroll={worldScroll} />
       </div>
 
       <div
