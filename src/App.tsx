@@ -614,7 +614,7 @@ export default function App() {
               ctx.shadowBlur = 4;
               ctx.shadowColor = 'rgba(0,0,0,0.2)';
               ctx.beginPath();
-              ctx.arc(pinX, pinY, 6, 0, Math PI * 2);
+              ctx.arc(pinX, pinY, 6, 0, Math.PI * 2);
               ctx.fill();
               
               // Pin Needle (Twine/Metal)
