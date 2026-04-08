@@ -11,6 +11,16 @@ const LIFT_ACCELERATION = -980;
 const GRAVITY = 620;
 const CRUISE_SPEED = 170;
 const BOOST_SPEED = 310;
+const LIFT_COST_PER_SECOND = 2.4;
+const BOOST_COST_PER_SECOND = 4.2;
+
+type AcornPickup = {
+  worldX: number;
+  y: number;
+  value: number;
+  phase: number;
+  collected: boolean;
+};
 
 type LayerConfig = {
   image: string;
@@ -59,6 +69,7 @@ export default function GameApp() {
   const [worldScroll, setWorldScroll] = useState(0);
   const [speed, setSpeed] = useState(0);
   const [altitude, setAltitude] = useState(0);
+  const [acorns, setAcorns] = useState(18);
   const [liftActive, setLiftActive] = useState(false);
   const [boostActive, setBoostActive] = useState(false);
 
@@ -66,9 +77,11 @@ export default function GameApp() {
   const velocityRef = useRef(0);
   const scrollRef = useRef(worldScroll);
   const speedRef = useRef(speed);
+  const acornsRef = useRef(acorns);
   const startedRef = useRef(started);
   const liftRef = useRef(liftActive);
   const boostRef = useRef(boostActive);
+  const pickupsRef = useRef<AcornPickup[]>([]);
 
   useEffect(() => {
     shipYRef.current = shipY;
@@ -81,6 +94,10 @@ export default function GameApp() {
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
+
+  useEffect(() => {
+    acornsRef.current = acorns;
+  }, [acorns]);
 
   useEffect(() => {
     startedRef.current = started;
@@ -105,6 +122,24 @@ export default function GameApp() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    pickupsRef.current = Array.from({length: 32}, (_, index) => ({
+      worldX: 440 + index * 260 + (index % 4) * 28,
+      y: 150 + ((index * 67) % Math.max(180, viewport.height - 360)),
+      value: index % 6 === 0 ? 3 : 1,
+      phase: index * 0.8,
+      collected: false,
+    }));
+  }, [viewport.height]);
+
+  const updateAcorns = (updater: (value: number) => number) => {
+    setAcorns((current) => {
+      const next = Math.max(0, updater(current));
+      acornsRef.current = next;
+      return next;
+    });
+  };
 
   useEffect(() => {
     const activateLift = () => setLiftActive(true);
@@ -149,9 +184,15 @@ export default function GameApp() {
       lastTime = time;
 
       if (startedRef.current) {
-        const acceleration = liftRef.current ? LIFT_ACCELERATION : GRAVITY;
+        const canLift = liftRef.current && acornsRef.current > 0;
+        const canBoost = boostRef.current && acornsRef.current > 0;
+        const acceleration = canLift ? LIFT_ACCELERATION : GRAVITY;
         velocityRef.current += acceleration * dt;
-        velocityRef.current *= liftRef.current ? 0.99 : 0.985;
+        velocityRef.current *= canLift ? 0.99 : 0.985;
+
+        if (canLift) {
+          updateAcorns((current) => current - LIFT_COST_PER_SECOND * dt);
+        }
 
         const nextShipY = clamp(
           shipYRef.current + velocityRef.current * dt,
@@ -166,11 +207,15 @@ export default function GameApp() {
         shipYRef.current = nextShipY;
         setShipY(nextShipY);
 
-        const targetSpeed = boostRef.current ? BOOST_SPEED : CRUISE_SPEED;
+        const targetSpeed = canBoost ? BOOST_SPEED : CRUISE_SPEED;
         const nextSpeed =
           speedRef.current +
           (targetSpeed - speedRef.current) * Math.min(1, dt * 4);
         const nextScroll = scrollRef.current + nextSpeed * dt;
+
+        if (canBoost) {
+          updateAcorns((current) => current - BOOST_COST_PER_SECOND * dt);
+        }
 
         speedRef.current = nextSpeed;
         scrollRef.current = nextScroll;
@@ -179,6 +224,30 @@ export default function GameApp() {
 
         const normalizedHeight = 1 - (nextShipY - 110) / Math.max(1, viewport.height - 280);
         setAltitude(Math.round(normalizedHeight * 5800));
+
+        const nextShipX = viewport.width * 0.24 + Math.min(70, nextSpeed * 0.12);
+        for (const pickup of pickupsRef.current) {
+          if (pickup.collected) {
+            continue;
+          }
+
+          const pickupScreenX = pickup.worldX - nextScroll;
+          if (pickupScreenX < -60 || pickupScreenX > viewport.width + 60) {
+            continue;
+          }
+
+          const pickupScreenY =
+            pickup.y + Math.sin(nextScroll * 0.012 + pickup.phase) * 16;
+          const distance = Math.hypot(
+            pickupScreenX - nextShipX,
+            pickupScreenY - nextShipY,
+          );
+
+          if (distance < 64) {
+            pickup.collected = true;
+            updateAcorns((current) => current + pickup.value);
+          }
+        }
       } else {
         if (speedRef.current !== 0) {
           speedRef.current = 0;
@@ -196,6 +265,14 @@ export default function GameApp() {
   const shipAngle = clamp(velocityRef.current * 0.03, -18, 18);
   const shipX = viewport.width * 0.24 + Math.min(70, speed * 0.12);
   const activeLoop = LOOP_SEQUENCE[Math.floor(worldScroll / 900) % LOOP_SEQUENCE.length];
+  const visiblePickups = pickupsRef.current.filter((pickup) => {
+    if (pickup.collected) {
+      return false;
+    }
+
+    const pickupScreenX = pickup.worldX - worldScroll;
+    return pickupScreenX > -80 && pickupScreenX < viewport.width + 80;
+  });
   const shipShadow = useMemo(
     () => `drop-shadow(0 24px 28px rgba(36, 48, 43, 0.28)) drop-shadow(0 0 22px rgba(238, 197, 122, ${liftActive ? 0.36 : 0.12}))`,
     [liftActive],
@@ -232,6 +309,34 @@ export default function GameApp() {
         }}
       />
 
+      {visiblePickups.map((pickup) => {
+        const pickupScreenX = pickup.worldX - worldScroll;
+        const pickupScreenY =
+          pickup.y + Math.sin(worldScroll * 0.012 + pickup.phase) * 16;
+
+        return (
+          <div
+            key={pickup.worldX}
+            className="pointer-events-none absolute"
+            style={{
+              left: pickupScreenX - 16,
+              top: pickupScreenY - 20,
+            }}
+          >
+            <div className="relative h-10 w-8 drop-shadow-[0_10px_18px_rgba(58,34,10,0.28)]">
+              <div className="absolute left-[6px] top-[1px] h-4 w-5 rounded-t-full rounded-b-[8px] bg-[#6a4221]" />
+              <div className="absolute left-[3px] top-[10px] h-6 w-6 rounded-b-[14px] rounded-t-[10px] bg-[#bf7640]" />
+              <div className="absolute left-[14px] top-[-3px] h-3 w-[2px] rotate-[25deg] rounded-full bg-[#3d6c39]" />
+              {pickup.value > 1 && (
+                <div className="absolute -right-3 -top-2 rounded-full bg-[#f7f2e7] px-1.5 py-0.5 text-[10px] font-semibold text-[#6a4221] shadow-sm">
+                  +{pickup.value}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
       <div
         className="absolute rounded-full bg-[#274635]/15 blur-2xl"
         style={{
@@ -266,11 +371,19 @@ export default function GameApp() {
             Flight deck
           </div>
           <div className="mt-3 text-sm text-[#3f5848]">
-            Hold press to lift. Tap or press space to boost the scroll.
+            Hold press to lift. Press space to boost. Both spend acorns, and flying through acorns refills them.
           </div>
         </div>
 
         <div className="flex gap-3">
+          <div className="rounded-[24px] border border-white/50 bg-[#f7f2e7]/85 px-4 py-3 text-right shadow-[0_20px_60px_rgba(17,34,26,0.16)] backdrop-blur">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[#758674]">
+              Acorns
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-[#8b4e24]">
+              {Math.floor(acorns)}
+            </div>
+          </div>
           <div className="rounded-[24px] border border-white/50 bg-[#f7f2e7]/85 px-4 py-3 text-right shadow-[0_20px_60px_rgba(17,34,26,0.16)] backdrop-blur">
             <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[#758674]">
               Speed
@@ -300,7 +413,7 @@ export default function GameApp() {
               Launch Flight
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-[#d6e2d1]">
-              Your airship is ready. Launch into a moving mountain run with lift controls and visible world scroll.
+              Your airship is ready. Launch into a moving mountain run, collect acorns in flight, and spend them on lift and boost.
             </p>
             <button
               type="button"
