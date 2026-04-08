@@ -14,19 +14,16 @@ const BOOST_SPEED = 310;
 
 type LayerConfig = {
   image: string;
-  bottom: number;
-  height: number;
   speed: number;
-  size: string;
 };
 
 const LOOP_SEQUENCE: LayerConfig[] = [
-  {image: loop7Src, bottom: 240, height: 320, speed: 0.12, size: 'auto 100%'},
-  {image: loop6Src, bottom: 210, height: 340, speed: 0.16, size: 'auto 100%'},
-  {image: loop5Src, bottom: 180, height: 360, speed: 0.2, size: 'auto 100%'},
-  {image: loop4Src, bottom: 145, height: 380, speed: 0.24, size: 'auto 100%'},
-  {image: loop3Src, bottom: 110, height: 400, speed: 0.28, size: 'auto 100%'},
-  {image: loop2Src, bottom: 60, height: 270, speed: 0.34, size: 'auto 100%'},
+  {image: loop7Src, speed: 0.08},
+  {image: loop6Src, speed: 0.11},
+  {image: loop5Src, speed: 0.14},
+  {image: loop4Src, speed: 0.16},
+  {image: loop3Src, speed: 0.19},
+  {image: loop2Src, speed: 0.22},
 ];
 
 const clamp = (value: number, min: number, max: number) =>
@@ -34,23 +31,19 @@ const clamp = (value: number, min: number, max: number) =>
 
 function Layer({
   image,
-  bottom,
-  height,
   speed,
-  size,
   scroll,
 }: LayerConfig & {scroll: number}) {
   return (
     <div
-      className="pointer-events-none absolute left-[-20vw] right-[-20vw] bg-repeat-x"
+      className="pointer-events-none absolute inset-0 bg-repeat-x"
       style={{
-        bottom,
-        height,
         backgroundImage: `url(${image})`,
         backgroundRepeat: 'repeat-x',
         backgroundPositionX: `${-scroll * speed}px`,
-        backgroundPositionY: 'bottom',
-        backgroundSize: size,
+        backgroundPositionY: 'center',
+        backgroundSize: 'auto 100%',
+        filter: 'saturate(1.04) contrast(1.02)',
       }}
     />
   );
@@ -210,16 +203,10 @@ export default function GameApp() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#eef2e5] text-[#102018]">
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(circle at top, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.32) 28%, transparent 58%), linear-gradient(180deg, #f5efe0 0%, #dce7d7 52%, #bed0c1 100%)',
-        }}
-      />
+      <Layer {...activeLoop} scroll={worldScroll} />
 
       <div
-        className="absolute inset-0 opacity-70"
+        className="absolute inset-0 opacity-55"
         style={{
           backgroundImage:
             'linear-gradient(90deg, rgba(255,255,255,0.18) 0 1px, transparent 1px), linear-gradient(180deg, rgba(255,255,255,0.08) 0 1px, transparent 1px)',
@@ -228,9 +215,13 @@ export default function GameApp() {
         }}
       />
 
-      <div className="absolute inset-x-0 bottom-0 h-[72vh]">
-        <Layer {...activeLoop} scroll={worldScroll} />
-      </div>
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(245,239,224,0.2) 0%, rgba(220,231,215,0.08) 40%, rgba(13,30,20,0.22) 100%)',
+        }}
+      />
 
       <div
         className="absolute left-0 right-0 bottom-24 h-8"
