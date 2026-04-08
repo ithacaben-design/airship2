@@ -22,6 +22,21 @@ type AcornPickup = {
   collected: boolean;
 };
 
+type Kite = {
+  worldX: number;
+  y: number;
+  sway: number;
+  color: string;
+};
+
+type Balloon = {
+  worldX: number;
+  y: number;
+  size: number;
+  phase: number;
+  color: string;
+};
+
 type LayerConfig = {
   image: string;
   speed: number;
@@ -82,6 +97,8 @@ export default function GameApp() {
   const liftRef = useRef(liftActive);
   const boostRef = useRef(boostActive);
   const pickupsRef = useRef<AcornPickup[]>([]);
+  const kitesRef = useRef<Kite[]>([]);
+  const balloonsRef = useRef<Balloon[]>([]);
 
   useEffect(() => {
     shipYRef.current = shipY;
@@ -130,6 +147,21 @@ export default function GameApp() {
       value: index % 6 === 0 ? 3 : 1,
       phase: index * 0.8,
       collected: false,
+    }));
+
+    kitesRef.current = Array.from({length: 16}, (_, index) => ({
+      worldX: 620 + index * 520,
+      y: 110 + ((index * 73) % Math.max(120, viewport.height - 420)),
+      sway: index * 0.9,
+      color: ['#ef476f', '#ffd166', '#06d6a0', '#118ab2'][index % 4],
+    }));
+
+    balloonsRef.current = Array.from({length: 14}, (_, index) => ({
+      worldX: 880 + index * 610,
+      y: 130 + ((index * 81) % Math.max(140, viewport.height - 430)),
+      size: 28 + (index % 3) * 6,
+      phase: index * 0.7,
+      color: ['#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff'][index % 5],
     }));
   }, [viewport.height]);
 
@@ -273,6 +305,14 @@ export default function GameApp() {
     const pickupScreenX = pickup.worldX - worldScroll;
     return pickupScreenX > -80 && pickupScreenX < viewport.width + 80;
   });
+  const visibleKites = kitesRef.current.filter((kite) => {
+    const kiteScreenX = kite.worldX - worldScroll * 0.82;
+    return kiteScreenX > -120 && kiteScreenX < viewport.width + 120;
+  });
+  const visibleBalloons = balloonsRef.current.filter((balloon) => {
+    const balloonScreenX = balloon.worldX - worldScroll * 0.68;
+    return balloonScreenX > -140 && balloonScreenX < viewport.width + 140;
+  });
   const shipShadow = useMemo(
     () => `drop-shadow(0 24px 28px rgba(36, 48, 43, 0.28)) drop-shadow(0 0 22px rgba(238, 197, 122, ${liftActive ? 0.36 : 0.12}))`,
     [liftActive],
@@ -308,6 +348,88 @@ export default function GameApp() {
           transform: `translateX(${-worldScroll * 1.15}px)`,
         }}
       />
+
+      {visibleKites.map((kite) => {
+        const kiteScreenX = kite.worldX - worldScroll * 0.82;
+        const kiteScreenY = kite.y + Math.sin(worldScroll * 0.01 + kite.sway) * 24;
+        const kiteRotation = Math.sin(worldScroll * 0.008 + kite.sway) * 12;
+
+        return (
+          <div
+            key={kite.worldX}
+            className="pointer-events-none absolute"
+            style={{
+              left: kiteScreenX - 22,
+              top: kiteScreenY - 32,
+              transform: `rotate(${kiteRotation}deg)`,
+            }}
+          >
+            <div className="relative h-28 w-20">
+              <div
+                className="absolute left-3 top-0 h-16 w-16"
+                style={{
+                  background: kite.color,
+                  clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+                  boxShadow: '0 12px 24px rgba(17, 34, 26, 0.18)',
+                }}
+              />
+              <div className="absolute left-[34px] top-1 h-15 w-[2px] bg-white/70" />
+              <div className="absolute left-6 top-8 h-[2px] w-16 bg-white/70" />
+              <div className="absolute left-[34px] top-16 h-12 w-[2px] bg-[#8b6a49]" />
+              <div className="absolute left-[35px] top-28 h-10 w-[2px] bg-[#8b6a49]" />
+              <div className="absolute left-[28px] top-[74px] h-2 w-5 bg-white/70 rotate-[18deg]" />
+              <div className="absolute left-[38px] top-[86px] h-2 w-5 bg-white/70 -rotate-[22deg]" />
+            </div>
+          </div>
+        );
+      })}
+
+      {visibleBalloons.map((balloon) => {
+        const balloonScreenX = balloon.worldX - worldScroll * 0.68;
+        const balloonScreenY = balloon.y + Math.sin(worldScroll * 0.007 + balloon.phase) * 26;
+
+        return (
+          <div
+            key={balloon.worldX}
+            className="pointer-events-none absolute"
+            style={{
+              left: balloonScreenX - balloon.size,
+              top: balloonScreenY - balloon.size * 1.8,
+            }}
+          >
+            <div
+              className="relative"
+              style={{width: balloon.size * 2, height: balloon.size * 3}}
+            >
+              <div
+                className="absolute left-0 top-0 rounded-full"
+                style={{
+                  width: balloon.size * 2,
+                  height: balloon.size * 2.2,
+                  background: balloon.color,
+                  boxShadow: '0 16px 28px rgba(17, 34, 26, 0.18)',
+                }}
+              />
+              <div
+                className="absolute left-[18%] top-[12%] rounded-full bg-white/35"
+                style={{
+                  width: balloon.size * 0.55,
+                  height: balloon.size * 0.7,
+                }}
+              />
+              <div className="absolute left-[28%] top-[72%] h-7 w-[1.5px] bg-[#8b6a49]" />
+              <div className="absolute left-[70%] top-[72%] h-7 w-[1.5px] bg-[#8b6a49]" />
+              <div
+                className="absolute left-[30%] top-[96%] border border-[#8b6a49]/30 bg-[#f7f2e7]"
+                style={{
+                  width: balloon.size * 0.8,
+                  height: balloon.size * 0.45,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
 
       {visiblePickups.map((pickup) => {
         const pickupScreenX = pickup.worldX - worldScroll;
