@@ -11,13 +11,23 @@ const LIFT_ACCELERATION = -980;
 const GRAVITY = 620;
 const CRUISE_SPEED = 170;
 const BOOST_SPEED = 310;
+const SONG_SPEED_BONUS = 120;
 const LIFT_COST_PER_SECOND = 2.4;
 const BOOST_COST_PER_SECOND = 4.2;
+const ACTION_COST = 10;
+const SONG_NOTES_REQUIRED = 3;
 
 type AcornPickup = {
   worldX: number;
   y: number;
   value: number;
+  phase: number;
+  collected: boolean;
+};
+
+type NotePickup = {
+  worldX: number;
+  y: number;
   phase: number;
   collected: boolean;
 };
@@ -54,6 +64,35 @@ const LOOP_SEQUENCE: LayerConfig[] = [
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
+const FRUIT_EMOJI: Record<string, string> = {
+  apple: '🍎',
+  'red apple': '🍎',
+  'green apple': '🍏',
+  banana: '🍌',
+  bananas: '🍌',
+  grape: '🍇',
+  grapes: '🍇',
+  orange: '🍊',
+  strawberry: '🍓',
+  strawberries: '🍓',
+  cherry: '🍒',
+  cherries: '🍒',
+  peach: '🍑',
+  pineapple: '🍍',
+  kiwi: '🥝',
+  lemon: '🍋',
+  pear: '🍐',
+  blueberry: '🫐',
+  blueberries: '🫐',
+  coconut: '🥥',
+  mango: '🥭',
+};
+
+const getFruitEmoji = (fruit: string) => {
+  const normalized = fruit.toLowerCase().trim();
+  return FRUIT_EMOJI[normalized] ?? '🎈';
+};
+
 function Layer({
   image,
   speed,
@@ -76,6 +115,10 @@ function Layer({
 
 export default function GameApp() {
   const [started, setStarted] = useState(false);
+  const [setupName, setSetupName] = useState('Captain Acorn');
+  const [setupFruit, setSetupFruit] = useState('Strawberry');
+  const [pilotName, setPilotName] = useState('Captain Acorn');
+  const [favoriteFruit, setFavoriteFruit] = useState('Strawberry');
   const [viewport, setViewport] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -84,21 +127,33 @@ export default function GameApp() {
   const [worldScroll, setWorldScroll] = useState(0);
   const [speed, setSpeed] = useState(0);
   const [altitude, setAltitude] = useState(0);
-  const [acorns, setAcorns] = useState(18);
+  const [acorns, setAcorns] = useState(50);
+  const [notes, setNotes] = useState(0);
   const [liftActive, setLiftActive] = useState(false);
   const [boostActive, setBoostActive] = useState(false);
+  const [attachedBalloonCount, setAttachedBalloonCount] = useState(1);
+  const [attachedKiteCount, setAttachedKiteCount] = useState(1);
+  const [songBurstTimer, setSongBurstTimer] = useState(0);
+  const [actionCooldown, setActionCooldown] = useState(0);
 
   const shipYRef = useRef(shipY);
   const velocityRef = useRef(0);
   const scrollRef = useRef(worldScroll);
   const speedRef = useRef(speed);
   const acornsRef = useRef(acorns);
+  const notesRef = useRef(notes);
   const startedRef = useRef(started);
   const liftRef = useRef(liftActive);
   const boostRef = useRef(boostActive);
+  const balloonCountRef = useRef(attachedBalloonCount);
+  const kiteCountRef = useRef(attachedKiteCount);
+  const songBurstRef = useRef(songBurstTimer);
+  const actionCooldownRef = useRef(actionCooldown);
   const pickupsRef = useRef<AcornPickup[]>([]);
+  const notePickupsRef = useRef<NotePickup[]>([]);
   const kitesRef = useRef<Kite[]>([]);
   const balloonsRef = useRef<Balloon[]>([]);
+  const fruitEmoji = useMemo(() => getFruitEmoji(favoriteFruit), [favoriteFruit]);
 
   useEffect(() => {
     shipYRef.current = shipY;
@@ -117,6 +172,10 @@ export default function GameApp() {
   }, [acorns]);
 
   useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
     startedRef.current = started;
   }, [started]);
 
@@ -127,6 +186,22 @@ export default function GameApp() {
   useEffect(() => {
     boostRef.current = boostActive;
   }, [boostActive]);
+
+  useEffect(() => {
+    balloonCountRef.current = attachedBalloonCount;
+  }, [attachedBalloonCount]);
+
+  useEffect(() => {
+    kiteCountRef.current = attachedKiteCount;
+  }, [attachedKiteCount]);
+
+  useEffect(() => {
+    songBurstRef.current = songBurstTimer;
+  }, [songBurstTimer]);
+
+  useEffect(() => {
+    actionCooldownRef.current = actionCooldown;
+  }, [actionCooldown]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -146,6 +221,13 @@ export default function GameApp() {
       y: 150 + ((index * 67) % Math.max(180, viewport.height - 360)),
       value: index % 6 === 0 ? 3 : 1,
       phase: index * 0.8,
+      collected: false,
+    }));
+
+    notePickupsRef.current = Array.from({length: 18}, (_, index) => ({
+      worldX: 760 + index * 430,
+      y: 120 + ((index * 91) % Math.max(150, viewport.height - 390)),
+      phase: index * 0.55,
       collected: false,
     }));
 
@@ -173,8 +255,114 @@ export default function GameApp() {
     });
   };
 
+  const updateNotes = (updater: (value: number) => number) => {
+    setNotes((current) => {
+      const next = clamp(updater(current), 0, SONG_NOTES_REQUIRED);
+      notesRef.current = next;
+      return next;
+    });
+  };
+
+  const triggerCooldown = () => {
+    setActionCooldown(2);
+    actionCooldownRef.current = 2;
+  };
+
+  const handleLaunch = () => {
+    const confirmedPilot = setupName.trim() || 'Captain Acorn';
+    const confirmedFruit = setupFruit.trim() || 'Strawberry';
+
+    setPilotName(confirmedPilot);
+    setFavoriteFruit(confirmedFruit);
+    setAttachedBalloonCount(1);
+    balloonCountRef.current = 1;
+    setAttachedKiteCount(1);
+    kiteCountRef.current = 1;
+    setAcorns(50);
+    acornsRef.current = 50;
+    setNotes(0);
+    notesRef.current = 0;
+    setSongBurstTimer(0);
+    songBurstRef.current = 0;
+    setActionCooldown(0);
+    actionCooldownRef.current = 0;
+    setStarted(true);
+    startedRef.current = true;
+  };
+
+  const addFruitBalloon = () => {
+    if (!started || actionCooldownRef.current > 0 || acornsRef.current < ACTION_COST) {
+      return;
+    }
+
+    updateAcorns((current) => current - ACTION_COST);
+    setAttachedBalloonCount((current) => {
+      const next = current + 1;
+      balloonCountRef.current = next;
+      return next;
+    });
+    triggerCooldown();
+  };
+
+  const addKite = () => {
+    if (!started || actionCooldownRef.current > 0 || acornsRef.current < ACTION_COST) {
+      return;
+    }
+
+    updateAcorns((current) => current - ACTION_COST);
+    setAttachedKiteCount((current) => {
+      const next = current + 1;
+      kiteCountRef.current = next;
+      return next;
+    });
+    triggerCooldown();
+  };
+
+  const triggerSong = () => {
+    if (!started || actionCooldownRef.current > 0 || notesRef.current < SONG_NOTES_REQUIRED) {
+      return;
+    }
+
+    updateNotes(() => 0);
+    setSongBurstTimer(6);
+    songBurstRef.current = 6;
+    triggerCooldown();
+  };
+
   useEffect(() => {
-    const activateLift = () => setLiftActive(true);
+    if (songBurstTimer <= 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setSongBurstTimer((current) => Math.max(0, current - 0.1));
+    }, 100);
+
+    return () => window.clearInterval(timer);
+  }, [songBurstTimer]);
+
+  useEffect(() => {
+    if (actionCooldown <= 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setActionCooldown((current) => Math.max(0, current - 0.1));
+    }, 100);
+
+    return () => window.clearInterval(timer);
+  }, [actionCooldown]);
+
+  useEffect(() => {
+    const shouldIgnoreTarget = (target: EventTarget | null) =>
+      target instanceof Element && !!target.closest('button,input');
+
+    const activateLift = (event: PointerEvent) => {
+      if (shouldIgnoreTarget(event.target)) {
+        return;
+      }
+      setLiftActive(true);
+    };
     const deactivateLift = () => setLiftActive(false);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.code === 'Space') {
@@ -216,9 +404,14 @@ export default function GameApp() {
       lastTime = time;
 
       if (startedRef.current) {
+        const balloonLiftBonus = balloonCountRef.current * 26;
+        const kiteSpeedBonus = kiteCountRef.current * 9;
+        const songBoost = songBurstRef.current > 0 ? SONG_SPEED_BONUS : 0;
         const canLift = liftRef.current && acornsRef.current > 0;
         const canBoost = boostRef.current && acornsRef.current > 0;
-        const acceleration = canLift ? LIFT_ACCELERATION : GRAVITY;
+        const acceleration = canLift
+          ? LIFT_ACCELERATION - balloonLiftBonus * 2
+          : GRAVITY - balloonLiftBonus * 0.65;
         velocityRef.current += acceleration * dt;
         velocityRef.current *= canLift ? 0.99 : 0.985;
 
@@ -239,7 +432,11 @@ export default function GameApp() {
         shipYRef.current = nextShipY;
         setShipY(nextShipY);
 
-        const targetSpeed = canBoost ? BOOST_SPEED : CRUISE_SPEED;
+        const targetSpeed =
+          CRUISE_SPEED +
+          kiteSpeedBonus +
+          songBoost +
+          (canBoost ? BOOST_SPEED - CRUISE_SPEED : 0);
         const nextSpeed =
           speedRef.current +
           (targetSpeed - speedRef.current) * Math.min(1, dt * 4);
@@ -258,6 +455,7 @@ export default function GameApp() {
         setAltitude(Math.round(normalizedHeight * 5800));
 
         const nextShipX = viewport.width * 0.24 + Math.min(70, nextSpeed * 0.12);
+        const pickupRadius = songBurstRef.current > 0 ? 104 : 64;
         for (const pickup of pickupsRef.current) {
           if (pickup.collected) {
             continue;
@@ -275,9 +473,32 @@ export default function GameApp() {
             pickupScreenY - nextShipY,
           );
 
-          if (distance < 64) {
+          if (distance < pickupRadius) {
             pickup.collected = true;
             updateAcorns((current) => current + pickup.value);
+          }
+        }
+
+        for (const pickup of notePickupsRef.current) {
+          if (pickup.collected || notesRef.current >= SONG_NOTES_REQUIRED) {
+            continue;
+          }
+
+          const pickupScreenX = pickup.worldX - nextScroll;
+          if (pickupScreenX < -80 || pickupScreenX > viewport.width + 80) {
+            continue;
+          }
+
+          const pickupScreenY =
+            pickup.y + Math.sin(nextScroll * 0.01 + pickup.phase) * 18;
+          const distance = Math.hypot(
+            pickupScreenX - nextShipX,
+            pickupScreenY - nextShipY,
+          );
+
+          if (distance < pickupRadius) {
+            pickup.collected = true;
+            updateNotes((current) => current + 1);
           }
         }
       } else {
@@ -305,6 +526,14 @@ export default function GameApp() {
     const pickupScreenX = pickup.worldX - worldScroll;
     return pickupScreenX > -80 && pickupScreenX < viewport.width + 80;
   });
+  const visibleNotePickups = notePickupsRef.current.filter((pickup) => {
+    if (pickup.collected || notes >= SONG_NOTES_REQUIRED) {
+      return false;
+    }
+
+    const pickupScreenX = pickup.worldX - worldScroll;
+    return pickupScreenX > -80 && pickupScreenX < viewport.width + 80;
+  });
   const visibleKites = kitesRef.current.filter((kite) => {
     const kiteScreenX = kite.worldX - worldScroll * 0.82;
     return kiteScreenX > -120 && kiteScreenX < viewport.width + 120;
@@ -317,6 +546,8 @@ export default function GameApp() {
     () => `drop-shadow(0 24px 28px rgba(36, 48, 43, 0.28)) drop-shadow(0 0 22px rgba(238, 197, 122, ${liftActive ? 0.36 : 0.12}))`,
     [liftActive],
   );
+  const canUseSong = notes >= SONG_NOTES_REQUIRED && actionCooldown <= 0;
+  const canBuyAction = acorns >= ACTION_COST && actionCooldown <= 0;
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#eef2e5] text-[#102018]">
@@ -339,6 +570,10 @@ export default function GameApp() {
             'linear-gradient(180deg, rgba(245,239,224,0.2) 0%, rgba(220,231,215,0.08) 40%, rgba(13,30,20,0.22) 100%)',
         }}
       />
+
+      {songBurstTimer > 0 && (
+        <div className="pointer-events-none absolute inset-0 bg-[#fff3d4]/15 backdrop-blur-[1px]" />
+      )}
 
       <div
         className="absolute left-0 right-0 bottom-24 h-8"
@@ -431,6 +666,28 @@ export default function GameApp() {
         );
       })}
 
+      {visibleNotePickups.map((pickup) => {
+        const pickupScreenX = pickup.worldX - worldScroll;
+        const pickupScreenY =
+          pickup.y + Math.sin(worldScroll * 0.01 + pickup.phase) * 18;
+
+        return (
+          <div
+            key={pickup.worldX}
+            className="pointer-events-none absolute"
+            style={{
+              left: pickupScreenX - 18,
+              top: pickupScreenY - 22,
+            }}
+          >
+            <div className="relative h-11 w-9 rounded-md border border-[#d4a373] bg-[#fff8eb]/90 shadow-[0_10px_18px_rgba(17,34,26,0.14)]">
+              <div className="absolute inset-0 rounded-md bg-[linear-gradient(180deg,transparent_0,transparent_78%,rgba(212,163,115,0.12)_78%,rgba(212,163,115,0.12)_100%)]" />
+              <div className="absolute inset-0 flex items-center justify-center text-xl">🎶</div>
+            </div>
+          </div>
+        );
+      })}
+
       {visiblePickups.map((pickup) => {
         const pickupScreenX = pickup.worldX - worldScroll;
         const pickupScreenY =
@@ -470,6 +727,58 @@ export default function GameApp() {
         }}
       />
 
+      <div
+        className="pointer-events-none absolute"
+        style={{
+          left: shipX - 92,
+          top: shipY - 110,
+          width: 230,
+          height: 210,
+        }}
+      >
+        {Array.from({length: attachedBalloonCount}).map((_, index) => {
+          const offsetX = -18 - index * 24;
+          const offsetY = -18 - (index % 3) * 22;
+          const sway = Math.sin(worldScroll * 0.01 + index) * 10;
+          return (
+            <div key={`attached-balloon-${index}`} className="absolute" style={{left: 70 + offsetX + sway, top: 34 + offsetY}}>
+              <div className="absolute left-[26px] top-[56px] h-16 w-[1.5px] bg-white/70" />
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-[#fff6e4]/55 shadow-[0_10px_20px_rgba(17,34,26,0.14)]">
+                <div className="text-3xl">{fruitEmoji}</div>
+              </div>
+            </div>
+          );
+        })}
+
+        {Array.from({length: attachedKiteCount}).map((_, index) => {
+          const offsetX = 110 + index * 28;
+          const offsetY = -10 - (index % 2) * 18;
+          const sway = Math.sin(worldScroll * 0.014 + index * 0.8) * 12;
+          const rotation = Math.sin(worldScroll * 0.012 + index) * 10;
+          return (
+            <div
+              key={`attached-kite-${index}`}
+              className="absolute"
+              style={{
+                left: offsetX + sway,
+                top: 62 + offsetY,
+                transform: `rotate(${rotation}deg)`,
+              }}
+            >
+              <div className="absolute -left-16 top-[22px] h-[1.5px] w-16 bg-white/70" />
+              <div className="relative h-16 w-16">
+                <div
+                  className="absolute left-2 top-1 h-12 w-12 bg-[#f7f2e7]"
+                  style={{clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'}}
+                />
+                <div className="absolute left-8 top-1 h-12 w-[1.5px] bg-[#8b6a49]" />
+                <div className="absolute left-2 top-7 h-[1.5px] w-12 bg-[#8b6a49]" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <img
         src={airshipImageSrc}
         alt="Airship"
@@ -487,13 +796,13 @@ export default function GameApp() {
       <div className="absolute left-6 right-6 top-6 flex items-start justify-between">
         <div className="rounded-[28px] border border-white/50 bg-[#f7f2e7]/85 px-5 py-4 shadow-[0_20px_60px_rgba(17,34,26,0.16)] backdrop-blur">
           <div className="text-[11px] font-semibold uppercase tracking-[0.35em] text-[#5c6f60]">
-            Acorn Airship
+            {pilotName}
           </div>
           <div className="mt-2 text-3xl font-semibold italic tracking-tight text-[#153120]">
-            Flight deck
+            Acorn Airship
           </div>
           <div className="mt-3 text-sm text-[#3f5848]">
-            Hold press to lift. Press space to boost. Both spend acorns, and flying through acorns refills them.
+            Fruit balloon: {fruitEmoji} {favoriteFruit}. Collect 3 notes to trigger a song burst.
           </div>
         </div>
 
@@ -504,6 +813,14 @@ export default function GameApp() {
             </div>
             <div className="mt-1 text-2xl font-semibold text-[#8b4e24]">
               {Math.floor(acorns)}
+            </div>
+          </div>
+          <div className="rounded-[24px] border border-white/50 bg-[#f7f2e7]/85 px-4 py-3 text-right shadow-[0_20px_60px_rgba(17,34,26,0.16)] backdrop-blur">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[#758674]">
+              Notes
+            </div>
+            <div className="mt-1 text-2xl font-semibold text-[#b56a2f]">
+              {notes}/{SONG_NOTES_REQUIRED}
             </div>
           </div>
           <div className="rounded-[24px] border border-white/50 bg-[#f7f2e7]/85 px-4 py-3 text-right shadow-[0_20px_60px_rgba(17,34,26,0.16)] backdrop-blur">
@@ -525,21 +842,102 @@ export default function GameApp() {
         </div>
       </div>
 
+      {started && (
+        <>
+          <div className="pointer-events-none absolute bottom-32 left-1/2 -translate-x-1/2 rounded-full border border-white/35 bg-[#163423]/55 px-5 py-2 text-[12px] font-semibold uppercase tracking-[0.35em] text-[#f7f2e7] shadow-[0_16px_40px_rgba(6,18,12,0.28)] backdrop-blur">
+            Hold press to lift. Press space to boost.
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-5">
+            <div className="mx-auto flex max-w-xl gap-3 rounded-[30px] border border-white/20 bg-[#183424]/72 p-3 shadow-[0_28px_80px_rgba(6,18,12,0.35)] backdrop-blur-xl">
+              <button
+                type="button"
+                onClick={triggerSong}
+                disabled={!canUseSong}
+                className={`flex-1 rounded-[22px] px-4 py-4 text-sm font-semibold uppercase tracking-[0.26em] transition ${
+                  canUseSong
+                    ? 'bg-[#fff1cc] text-[#5b3b14] shadow-[0_16px_30px_rgba(255,227,167,0.3)] hover:scale-[1.02]'
+                    : 'bg-white/10 text-[#d1d8cf] opacity-60'
+                }`}
+              >
+                🎵 Song
+                <div className="mt-1 text-[11px] tracking-[0.18em]">{notes}/{SONG_NOTES_REQUIRED} notes</div>
+              </button>
+              <button
+                type="button"
+                onClick={addFruitBalloon}
+                disabled={!canBuyAction}
+                className={`flex-1 rounded-[22px] px-4 py-4 text-sm font-semibold uppercase tracking-[0.26em] transition ${
+                  canBuyAction
+                    ? 'bg-[#f7f2e7] text-[#23402d] shadow-[0_16px_30px_rgba(247,242,231,0.18)] hover:scale-[1.02]'
+                    : 'bg-white/10 text-[#d1d8cf] opacity-60'
+                }`}
+              >
+                {fruitEmoji} Balloon
+                <div className="mt-1 text-[11px] tracking-[0.18em]">-10 acorns</div>
+              </button>
+                 <button
+                type="button"
+                onClick={addKite}
+                disabled={!canBuyAction}
+                className={`flex-1 rounded-[22px] px-4 py-4 text-sm font-semibold uppercase tracking-[0.26em] transition ${
+                  canBuyAction
+                    ? 'bg-[#f7f2e7] text-[#23402d] shadow-[0_16px_30px_rgba(247,242,231,0.18)] hover:scale-[1.02]'
+                    : 'bg-white/10 text-[#d1d8cf] opacity-60'
+                }`}
+              >
+                🪁 Kite
+                <div className="mt-1 text-[11px] tracking-[0.18em]">-10 acorns</div>
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {!started && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#102018]/58 px-6 backdrop-blur-sm">
-          <div className="max-w-2xl rounded-[40px] border border-white/20 bg-[#163423]/82 px-8 py-10 text-center shadow-[0_30px_120px_rgba(6,18,12,0.45)]">
+          <div className="w-full max-w-3xl rounded-[40px] border border-white/20 bg-[#163423]/82 px-8 py-10 text-center shadow-[0_30px_120px_rgba(6,18,12,0.45)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.42em] text-[#c6d9bf]">
               Landing Page
             </div>
             <h1 className="mt-4 text-5xl font-semibold italic tracking-tight text-[#f7f2e7] md:text-7xl">
               Launch Flight
             </h1>
-            <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-[#d6e2d1]">
-              Your airship is ready. Launch into a moving mountain run, collect acorns in flight, and spend them on lift and boost.
+            <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-[#d6e2d1]">
+              Stable scrolling flight, full-scene backgrounds, collectible acorns, song notes, fruit balloons, and kites in one run.
             </p>
+
+            <div className="mx-auto mt-8 grid max-w-2xl gap-4 rounded-[28px] border border-white/15 bg-[#f7f2e7]/10 p-5 text-left md:grid-cols-2">
+              <label className="flex flex-col gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#d6e2d1]">
+                  Pilot Name
+                </span>
+                <input
+                  value={setupName}
+                  onChange={(event) => setSetupName(event.target.value)}
+                  maxLength={18}
+                  className="rounded-2xl border border-white/20 bg-[#fff9ef] px-4 py-3 text-base text-[#213826] outline-none"
+                />
+              </label>
+              <label className="flex flex-col gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-[#d6e2d1]">
+                  Favorite Fruit
+                </span>
+                <input
+                  value={setupFruit}
+                  onChange={(event) => setSetupFruit(event.target.value)}
+                  maxLength={18}
+                  className="rounded-2xl border border-white/20 bg-[#fff9ef] px-4 py-3 text-base text-[#213826] outline-none"
+                />
+              </label>
+            </div>
+
+            <div className="mt-6 text-sm text-[#d6e2d1]">
+              Starting loadout: 50 acorns, 1 fruit balloon, 1 kite
+            </div>
             <button
               type="button"
-              onClick={() => setStarted(true)}
+              onClick={handleLaunch}
               className="mt-8 rounded-full bg-[#f1bf74] px-8 py-4 text-sm font-semibold uppercase tracking-[0.35em] text-[#213826] shadow-[0_20px_40px_rgba(241,191,116,0.28)] transition hover:scale-[1.02] hover:bg-[#f5ca8b] active:scale-[0.98]"
             >
               Launch Flight
